@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const { Schema } = mongoose;
+const validator=require("validator");
 
 const userSchema = new Schema({
     firstname:{ 
@@ -25,8 +26,15 @@ const userSchema = new Schema({
     email: {type:String,
         unique:true,
         required:true,
-        lowecase:true,
+        lowercase:true,
         trim:true,
+        validate(value){
+            if(!validator.isEmail(value))
+            {
+                throw new Error("invalid email address "+value);
+                
+            }
+        }
     },
     gender:{
     type:String,
@@ -38,17 +46,45 @@ const userSchema = new Schema({
         }
     }
     },
-    phoneNumber: Number,
+    phoneNumber: {
+        type:Number,
+        validate(value)
+        {
+            if(!validator.isMobilePhone)
+                throw new Error("invalid number"+value);
+
+        }
+
+    },
     photoUrl:{
         type:String,
-        default:"https://www.pngegg.com/en/png-mfrjz"
+        default:"https://www.pngegg.com/en/png-mfrjz",
+        validate(value)
+        {
+            if(!validator.isURL(value))
+                throw new Error("invalid Url "+value)
+        }
+
     },
     skills:{
         type:[String],
+        validate(arr)
+        {
+            if(arr.length>=5)
+                throw new Error("max 5 skills are allowed");
+        }
     },
     about:{
         type:String,
         default:"hey dev welcome to our platform"
+    },
+    password:{
+        type:String,
+        validate(value)
+        {
+            if(!validator.isStrongPassword(value))
+                throw new Error("not a strong password"+value);
+        }
     }
 
 },
@@ -58,5 +94,5 @@ const userSchema = new Schema({
 );
 
 // Model
-const userModel = mongoose.model("m1", userSchema);
+const userModel = mongoose.model("User", userSchema);
 module.exports = userModel;

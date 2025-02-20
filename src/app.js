@@ -1,96 +1,168 @@
-// creating the server
-const express=require("express");
-const app=express();
-const connectDB=require("./config/database");
-const m1 =require("./models/user"); // importing model
+// src/app.js
 
-app.use(express.json()); //middleware
+const express = require("express");
+const bcrypt = require("bcrypt");
+const connectDB = require("./config/database");
+const User = require("./models/user"); // Importing User model
 
+const app = express();
+app.use(express.json()); // Middleware to parse JSON
 
-//taking data from api
-app.post("/signup",async (req,res)=>{
-    // const userObj={
-    //     firsrname:"dhoni",
-    //     lastname:"mahi",
-    //     email:"@gdhomail.com",
-    //     age:23,
-    //     heekk:"hhhh",
-    // }
+// ✅ Signup Route - Create User
+app.post("/signup", async (req, res) => {
+    try {
+        const { firstname, lastname, email, age, password } = req.body;
 
-    //creating dynamic instace of m1 model taking data from post api call
-    const user= new m1(req.body); //passing object into model
-    try{
-    await user.save();
-    res.send("user added sucessfully");
-    }
-    catch(err){
-        res.status(400).send("error saving the message"+err.message);
-    }
+        // Check if all required fields are provided
+        if (!firstname || !email || !age || !password) {
+            return res.status(400).send("Missing required fields");
+        }
 
+        // Check if user already exists
+        const existingUser = await User.findOne({ email });
+        if (existingUser) {
+            return res.status(400).send("Email already registered");
+        }
 
-});
+        // Hash password
+        const hashedPassword = await bcrypt.hash(password, 10);
+        
 
-//getting user data with matched email
-app.get("/user", async(req,res)=>{
-const userEmail=req.body.email;
-
-try{
-    const users=await m1.find({email:userEmail});// it will send array of user with that email
-    if(users.length===0)
-        res.status(404).send("user not found");
-
-    res.send(users);
-}
-catch(err)
-{
-    res.status(400).send("something went wrong");
-}
-});
-
-app.get("/allUser",async(req,res)=>{
-    
-    const allUser=await m1.find({});
-    res.send(allUser);
-})
-app.delete("/deleteUser",async(req,res)=>{
-    const userID=req.body.id;
-    try{
-  const user= await m1.findByIdAndDelete(userID);
-  if(!user)
-    res.send("user not found");
-  res.send("user deleted Scucessfully");
-    }
-    catch(err){
-        res.status(404).send("somenthing went wrong");
-    }
-})
-app.patch("/updateUser",async(req,res)=>
-{
-    const id=req.body.id;
-    try{
-    const updatedUser=await m1.findByIdAndUpdate(id,req.body,
-        {returnDocument:"after",
-        runValidators:true,
+        // Create user
+        const user = new User({
+            firstname,
+            lastname,
+            email,
+            age,
+            password: hashedPassword,
         });
-    
-    res.send({ message: "Updated successfully", user: updatedUser });
 
+        await user.save();
+        res.status(201).send("User added successfully");
+    } catch (err) {
+        res.status(400).send("Error saving the message: " + err.message);
+    }
+});
+
+app.post("/login",async(req,res)=>{
+    try{
+        const {email,password}=req.body;
+        const user=await User.findOne({email:email});
+        if(!user){
+            throw new Error(" email is not valid");
+        }
+        const isPasswordValid=await bcrypt.compare(password,user.password);
+        if(isPasswordValid)
+        {
+            res.send("Login successfull");
+        }
+        else{
+            throw new Error(" password is not correct");
+        }
     }
     catch(err)
     {
-        res.status(400).send("update failed"+err.message);
+        res.status(400).send("error in login"+err.message);
     }
-    
-}
-
-)
-
-connectDB().then(()=>{
-    console.log("database connected successfully");
-
-    app.listen(7777,()=>{
-        console.log("server is running suceesfully");
-    });
-}).catch((err)=>{
-    console.log("database not conected",err);
 })
+
+// ✅ Get User by Email
+app.get("/user", async (req, res) => {
+    try {
+        const { email } = req.body;
+
+        if (!email) {
+            return res.status(400).send("Email is required");
+        }
+
+        const users = await User.find({ email });
+
+        if (users.length === 0) {
+            return res.status(404).send("User not found");
+        }
+
+        res.send(users);
+    } catch (err) {
+        res.status(400).send("Something went wrong: " + err.message);
+    }
+});
+
+// ✅ Get All Users
+app.get("/allUsers", async (req, res) => {
+    try {
+        const allUsers = await User.find({});
+        res.send(allUsers);
+    } catch (err) {
+        res.status(400).send("Error fetching users: " + err.message);
+    }
+});
+
+// ✅ Delete User by ID
+app.delete("/deleteUser", async (req, res) => {
+    try {
+        const { id } = req.body;
+
+        if (!id) {
+            return res.status(400).send("User ID is required");
+        }
+
+        const user = await User.findByIdAndDelete(id);
+
+        if (!user) {
+            return res.status(404).send("User not found");
+        }
+
+        res.send("User deleted successfully");
+    } catch (err) {
+        res.status(400).send("Something went wrong: " + err.message);
+    }
+});
+
+// ✅ Update User
+app.patch("/updateUser", async (req, res) => {
+    try {
+        const { id, ...updates } = req.body;
+
+        if (!id) {
+            return res.status(400).send("User ID is required");
+        }
+
+        const allowedUpdates = ["photoUrl", "about", "skills", "password", "phoneNumber"];
+        const isUpdateAllowed = Object.keys(updates).every((key) => allowedUpdates.includes(key));
+
+        if (!isUpdateAllowed) {
+            return res.status(405).send("Update not allowed");
+        }
+
+        // Hash new password if updated
+        if (updates.password) {
+            updates.password = await bcrypt.hash(updates.password, 10);
+        }
+
+        const updatedUser = await User.findByIdAndUpdate(id, updates, {
+            new: true, // Return updated user
+            runValidators: true,
+        });
+
+        if (!updatedUser) {
+            return res.status(404).send("User not found");
+        }
+
+        res.send({ message: "Updated successfully", user: updatedUser });
+    } catch (err) {
+        res.status(400).send("Update failed: " + err.message);
+    }
+});
+
+// ✅ Connect to Database and Start Server
+connectDB()
+    .then(() => {
+        console.log("Database connected successfully");
+        app.listen(7777, () => {
+            console.log("Server is running on port 7777");
+        });
+    })
+    .catch((err) => {
+        console.log("Database connection failed", err);
+    });
+
