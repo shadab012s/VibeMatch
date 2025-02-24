@@ -3,14 +3,18 @@
 const express = require("express");
 const bcrypt = require("bcrypt");
 const connectDB = require("./config/database");
+const cookieParser=require("cookie-parser");
 const User = require("./models/user"); // Importing User model
+const {userAuth}=require("./middlewares/auth")
 
 const app = express();
 app.use(express.json()); // Middleware to parse JSON
+app.use(cookieParser()); // it is a middleware to parse the cookies, help us to read the cookies
 
 // ✅ Signup Route - Create User
 app.post("/signup", async (req, res) => {
     try {
+        
         const { firstname, lastname, email, age, password } = req.body;
 
         // Check if all required fields are provided
@@ -51,9 +55,17 @@ app.post("/login",async(req,res)=>{
         if(!user){
             throw new Error(" email is not valid");
         }
-        const isPasswordValid=await bcrypt.compare(password,user.password);
+        const isPasswordValid=await user.validatePassword(password);
         if(isPasswordValid)
-        {
+        { 
+            //create a token 
+            const token=await user.getJWT();
+            
+            console.log(token);
+            //add the token to cookies and send the response back to the user
+            res.cookie("token",token,{
+                expires:new Date(Date.now()+8 *3600000),
+            });
             res.send("Login successfull");
         }
         else{
@@ -66,26 +78,23 @@ app.post("/login",async(req,res)=>{
     }
 })
 
-// ✅ Get User by Email
-app.get("/user", async (req, res) => {
-    try {
-        const { email } = req.body;
-
-        if (!email) {
-            return res.status(400).send("Email is required");
-        }
-
-        const users = await User.find({ email });
-
-        if (users.length === 0) {
-            return res.status(404).send("User not found");
-        }
-
-        res.send(users);
-    } catch (err) {
-        res.status(400).send("Something went wrong: " + err.message);
+app.get("/profile",userAuth,async(req,res)=>{
+    try{
+    
+    const user =req.user;
+    res.send(user);
     }
-});
+    catch(err)
+    {
+        res.status(400).send("Error "+ err.message);
+    }
+})
+
+app.post("/sendConnectionRequest",userAuth,async(req,res)=>{
+    const user=req.user;
+    console.log("sending a connection request");
+    res.send(user.firstname+" sent the connection request");
+})
 
 // ✅ Get All Users
 app.get("/allUsers", async (req, res) => {
@@ -98,61 +107,7 @@ app.get("/allUsers", async (req, res) => {
 });
 
 // ✅ Delete User by ID
-app.delete("/deleteUser", async (req, res) => {
-    try {
-        const { id } = req.body;
 
-        if (!id) {
-            return res.status(400).send("User ID is required");
-        }
-
-        const user = await User.findByIdAndDelete(id);
-
-        if (!user) {
-            return res.status(404).send("User not found");
-        }
-
-        res.send("User deleted successfully");
-    } catch (err) {
-        res.status(400).send("Something went wrong: " + err.message);
-    }
-});
-
-// ✅ Update User
-app.patch("/updateUser", async (req, res) => {
-    try {
-        const { id, ...updates } = req.body;
-
-        if (!id) {
-            return res.status(400).send("User ID is required");
-        }
-
-        const allowedUpdates = ["photoUrl", "about", "skills", "password", "phoneNumber"];
-        const isUpdateAllowed = Object.keys(updates).every((key) => allowedUpdates.includes(key));
-
-        if (!isUpdateAllowed) {
-            return res.status(405).send("Update not allowed");
-        }
-
-        // Hash new password if updated
-        if (updates.password) {
-            updates.password = await bcrypt.hash(updates.password, 10);
-        }
-
-        const updatedUser = await User.findByIdAndUpdate(id, updates, {
-            new: true, // Return updated user
-            runValidators: true,
-        });
-
-        if (!updatedUser) {
-            return res.status(404).send("User not found");
-        }
-
-        res.send({ message: "Updated successfully", user: updatedUser });
-    } catch (err) {
-        res.status(400).send("Update failed: " + err.message);
-    }
-});
 
 // ✅ Connect to Database and Start Server
 connectDB()
